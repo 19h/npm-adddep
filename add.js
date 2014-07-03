@@ -1,100 +1,125 @@
 #!/usr/bin/env node
+
 var fs = require('fs');
 var npm = require('npm');
-var util = require('util');
 
-var help = '\nnCLI for adding deps to a npm module. \
-\n\nUsage: \n\tadddep <packages> [options]\nOptions:\n\t-h, --help\tHelp screen\n\t-v, --version\tCurrent version\n\t-i, --install\tinstall packages after adding them';
-var version = 'v0.0.1';
+var self = require("./package.json");
 
-function inArray(value,array) {
-  var count=array.length;
-  for(var i=0;i<count;i++) {
-    if(array[i]===value) {
-      return true;
-    }
-  }
-  return false;
+// stop npm from polluting the commandline
+process.stderr.write = new Function;
+
+console.log=function(a, b){
+	process.stdout.write(a, b);
+	throw 1
+};
+
+var sign = [
+		"         ___ ____ __ __",
+	   	"        / _ `/ _ \\\\ \\ /",
+	   	"        \\_,_/ .__/_\\_\\ ",
+	   	"           /_/\n\t\t\033[1mdepadd " + self.version, "\033[0m",
+	   	"\tCLI for adding deps to a npm module.",
+	   	"", ""
+	].join("\n");
+
+var help = sign + 'Usage: \n\tadddep <packages> [options]\n\nOptions:\n\t-h, --help\tHelp screen\n\t-v, --version\tCurrent version\n\t-i, --install\tinstall packages after adding them';
+var version = self.version;
+
+if (process.argv[0] == 'node') {
+	argv = process.argv.slice(2);
+} else {
+	argv = process.argv;
 }
 
-function exit(message, error){
-	util.puts(message);
+var exit = function (message, error) {
+	process.stdout.write(message + "\n\n");
 	err = error || null;
 	process.exit(err);
 }
 
-if (process.argv[0] == 'node') {
-  argv = process.argv.slice(2);
-} else {
-  argv = process.argv;
+var recursiveGetProperty = function (obj, lookup, callback) {
+	for (property in obj) {
+		if (property == lookup) {
+			callback(obj[property]);
+		} else if (obj[property] instanceof Object) {
+			recursiveGetProperty(obj[property], lookup, callback);
+		}
+	}
 }
-function recursiveGetProperty(obj, lookup, callback) {
-    for (property in obj) {
-        if (property == lookup) {
-            callback(obj[property]);
-        } else if (obj[property] instanceof Object) {
-            recursiveGetProperty(obj[property], lookup, callback);
-        }
-    }
-}  
 
-function _install(){
-	npm.load({}, function(err){
-		npm.commands.install([], function(er, rd){})
+var _install = function () {
+	npm.load({}, function(err) {
+		npm.commands.install([], function(err, rd) {})
 	})
 }
 
+var base = process.cwd();
 
-//add version and help outputs
+var main = function(dependencies, install) {
+	npm.load({}, function(err) {
+		for (i = 0; i < dependencies.length; i += 1) {
+			var package = dependencies[i][0];
 
-main = function(dependencies, install){
-  
-  npm.load({}, function(err){
-	for (i=0;i<dependencies.length;i+=1) {
-	  package = dependencies[i][0];
-	  this.version1 = dependencies[i][1];
-	  (function(version1, package){
-		  npm.commands.show([package, 'name'], function(er, rawData){
-		  	if (er) console.log(er);
-		  	if(rawData){
-		  		data = JSON.parse(JSON.stringify(rawData));
-		  		if (typeof version1 == 'undefined') {
-		  			version1 = Object.keys(data)[0];
-		  		}
-		  		recursiveGetProperty(data, 'name', function(obj){
-		  		    data = fs.readFileSync('package.json', 'utf8');
-					pkginfo = JSON.parse(data);
-					pkginfo.dependencies[obj] = version1;
-					fs.writeFileSync('package.json', JSON.stringify(pkginfo, null, 2));
-		  		});
+			this.version1 = dependencies[i][1];
 
-		  	}
-		  });
-	  })(this.version1, package)	
-	}
-  });
-  if (install == true) _install()
+			(function(version1, package) {
+				npm.commands.show([package, 'name'], function(err, rawData) {
+					if (err) console.log(err);
+					if (rawData) {
+						if (typeof version1 == 'undefined') {
+							version1 = Object.keys(rawData)[0];
+						}
+
+						recursiveGetProperty(rawData, 'name', function(obj) {
+							try {
+								rawData = require(base + "/package.json");
+							} catch(e) {
+								exit("There's no package.json!")
+							}
+
+							rawData.dependencies = rawData.dependencies || [];
+							rawData.dependencies[obj] = version1;
+
+							fs.writeFileSync(base + 'package.json', JSON.stringify(rawData, null, 2));
+						});
+
+					}
+				});
+			})(this.version1, package)
+		}
+	});
+	if (install == true) _install()
 
 }
 
-var newArgv = [];
-for (i = argv.length - 1; i>=0; i-=1) {
-  newArgv.push(argv[i].split(' '));
-}
+var xa = [], xo = [];
+
+argv.forEach(function (v) {
+	return v[0] === "-" ? xo.push(v) : xa.push(v);
+})
+
 if (require.main === module) {
-  var install;
-  for (i = newArgv.length -1 ; i>=0; i-=1) {
-	  if (inArray('-h', newArgv[i]) || inArray('--help', newArgv[i])) {
-	  	exit(help)
-	  }
-	  else if (inArray('-v', newArgv[i]) || inArray ('--version', newArgv[i])) {
-	  	exit(version)
-	  }
-	  else if (inArray('-i', newArgv[i]) || inArray ('--install', newArgv[i])) {
-	  	newArgv.splice(newArgv.indexOf(newArgv[i]))
-	  	console.log(newArgv)
-	  	install = true
-	  }
-  }
-  main(newArgv, install);    
+	var install;
+
+	xo.forEach(function () {
+		if ( ~xo.indexOf("-h") || ~xo.indexOf("--help") ) {
+			return exit(help);
+		}
+
+		if ( ~xo.indexOf("-v") || ~xo.indexOf("--version") ) {
+			return exit(version);
+		}
+
+		if ( ~xo.indexOf("-i") || ~xo.indexOf("--install") ) {
+			install = true;
+		}
+	})
+
+	if (!xa.length && !xo.length) {
+		exit(help)
+	} else {
+		console.log(sign)
+	}
+
+	main(xa, install);
 }
