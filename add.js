@@ -118,7 +118,10 @@ var main = function(deps, install) {
 
 			if (del) pck = pck.slice(1);
 
-			package.dependencies = package.dependencies || [];
+			package.dependencies = package.dependencies || {};
+
+			if ( package.dependencies instanceof Array )
+				package.dependencies = {};
 
 			console.log("fc", fc, "wc", wc, "ver", ver, "del", "del")
 
